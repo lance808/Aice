@@ -1,0 +1,129 @@
+“文件式记忆 + Git + 桌面端 + 多 AI 工具接入”收束成了一个可手敲、可写简历、单机可跑通的方案。
+
+一、项目定位（一句话）
+基于 Karpathy LLM Wiki 范式的本地优先个人 AI 记忆服务：Markdown 是唯一真相源，Git 管版本；Java 网关统一鉴权、写入与审计；Python 负责切片、混合检索与 LLM 生成；桌面端供人读写，外部 AI 工具通过 REST 查询与暂存写入。
+
+本地优先个人 AI 记忆库（Wiki + RAG + 多工具接入）
+本地优先 / 个人知识库 / 检索服务化
+
+二、最终架构
+text
+桌面应用（Tauri 2）
+   │  人读人写：浏览、审阅 pending、看 diff、手动 reindex
+   ▼
+Java Spring Boot 网关（唯一对外入口）
+   ├─ 用户登录 / 会话 / 人设配置
+   ├─ API Key 管理（read / write scope + 空间绑定）
+   ├─ 文档上传、SHA256 去重、状态机
+   ├─ /v1/retrieve 外部查询
+   ├─ /v1/ingest   外部暂存写入 → pending-queue
+   ├─ 审计 query_log / ingest_log / action_log
+   ├─ 模型配置面：GET /v1/models + capability 元数据
+   └─ SSE 流式透传
+        │ HTTP JSON
+Python FastAPI 能力层（无状态）
+   ├─ /parse     解析 + 切片
+   ├─ /embed     向量化入库
+   ├─ /retrieve  混合检索（FTS5 + Chroma，RRF 融合）
+   └─ /chat      Prompt 拼装 + LLM 流式生成
+        │
+Markdown 记忆树（Git） + SQLite FTS5 + Chroma（派生索引，可重建）
+边界一句话：Java 决定“能不能读、能不能写、怎么审计”；Python 只做解析、检索、生成；外部工具永远不直接碰记忆树和向量库。
+
+三、记忆树最终形态
+text
+memory-vault/                 # Git 仓库根
+├── AGENTS.md                # 给所有 AI 工具的导航契约
+├── 个人/
+│   ├── _index.md            # 路由层：frontmatter + 文件夹摘要
+│   ├── 身体健康/
+│   │   ├── _index.md
+│   │   └── 2026-11-xx.md
+│   └── 事件/
+│       └── _index.md
+├── pending/                 # 外部写入暂存区，不入 Git 正文
+└── .index/                  # SQLite + Chroma 派生索引，gitignore
+四条硬约束：
+
+Markdown 是唯一真相源，SQLite / Chroma 删掉可从 .md 重建。
+
+_index.md 必须带 frontmatter：summary、tags、last_updated，供程序解析路由，不靠 LLM 读全文猜。
+
+外部写入走 pending-queue：先 staged，committer 串行提交；base-hash 漂移生成 conflict record，交给调用方合并，server 不调 LLM 硬合并。
+
+一份 AGENTS.md 服务多个 AI 工具，不逐工具写适配。
+
+四、四条设想的最终结论
+你的设想	定论
+文件夹 + 概括 + Git 日期版本	✅ 成立。概括文件 frontmatter 化；Git 用 git log/tag 追溯；向量库是可重建索引
+桌面应用启动	✅ 选 Tauri 2，文件访问 capability 限定到 vault 根目录；不想碰 Rust 再用 Electron
+上游探测模型/能力	⚠️ 收束为配置面：GET /v1/models + capability 元数据，不做运行时必经探测
+第三方工具增删改查权限	❌ 不在工具内部做 ACL。网关统一 scope + 空间绑定 + 工具白名单 + 审计 + 写入待确认
+五、MVP 范围（明确不做什么）
+做：
+
+单用户登录，保留用户归属字段。
+
+多知识空间，作为轻量隔离。
+
+文档上传 → 解析 → 切片 → 混合检索 → 带引用问答。
+
+2～3 个人设配置（语气、引用策略、拒答策略、版本号）。
+
+外部工具：/v1/retrieve 查询 + /v1/ingest 暂存写入。
+
+API Key scope、空间绑定、简单令牌桶限流、审计。
+
+Docker Compose 单机一键启动。
+
+不做：
+
+多租户组织架构、SSO、审批流、消息队列、K8s。
+
+长期记忆自动向量化、多 Agent、语音、微调。
+
+外部工具直接写 Chroma 或直接改 Git 正文树。
+
+分布式限流、计费系统。
+
+六、手敲路线（8 周，按阶段）
+硬规则：每个新模块先关 AI 手写 30 分钟伪代码/骨架，卡住只问“思路哪里错”，不直接要完整代码；拿到反馈后自己重敲，并在注释写“AI 方案 vs 我改了什么”。
+
+第 1 周｜Java 基础闭环
+登录、空间、文档上传/列表/删除；手写 SHA256 去重；Postman 跑通。
+
+第 2 周｜Python 解析与切片
+FastAPI /parse；自己写切片函数（chunk_size/overlap）；打印前 5 个切片肉眼检查；写 debug_log.md。
+
+第 3 周｜Java 调 Python + 状态机
+RestClient 手写调用；文档状态 UPLOADED → PARSED → EMBEDDED；先同步跑通，再加 ingest_job 表轮询。
+
+第 4 周｜混合检索
+SQLite FTS5 + Chroma 双路召回；手写 RRF 融合；10 个测试问题打印 top-3 肉眼判断；调切片参数记录命中率变化。
+
+第 5 周｜对话外层 + 人设层 + SSE
+Python /chat 拼 Prompt 强制引用；Java StreamingResponseBody 透传；引用落库；测试“无答案必须拒答”；人设只影响语气，不覆盖事实。
+
+第 6 周｜API Key + 外部查询/写入
+手写 Key 生成、SHA256 哈希存储、scope 校验、空间绑定；实现 /v1/retrieve 和 /v1/ingest；用 curl 模拟外部工具；令牌桶限流返回 429；审计落库。
+
+第 7 周｜Wiki 写入链路 + pending-queue
+外部写入 staged 到 pending/；committer 串行 drain；base-hash 漂移生成 conflict record；_index.md frontmatter 路由；AGENTS.md 契约。
+
+第 8 周｜桌面壳 + 模型配置面 + 评估 + Docker
+Tauri 2 最小桌面端（浏览、pending 审阅、reindex）；GET /v1/models 归一化落库；标注 40 条评估集算 Top-3 命中率；Docker Compose；README 架构图与失败案例。
+
+七、简历写法（数字换成你的）
+本地优先个人 AI 记忆库（Wiki + RAG + 多工具接入）
+
+Spring Boot + FastAPI 双语言：Java 网关负责鉴权、API Key scope、文档去重、写入状态机、审计与 SSE 转发；Python 负责切片、FTS5+Chroma 混合检索与 LLM 生成。
+
+采用 Karpathy LLM Wiki 范式，Markdown 为唯一真相源，Git 管版本，SQLite/Chroma 为可重建派生索引；_index.md frontmatter 实现渐进式路由。
+
+外部 AI 工具通过 REST 查询；写入经网关校验、SHA256 去重、幂等与 pending-queue 串行提交，不直接暴露记忆树与向量库。
+
+结构化人设配置层实现“人设只影响表达、事实由检索约束”；引用缺失降级拒答。
+
+手工标注 40 条评估集，Top-3 命中率 62%→81%，引用覆盖率 92%，无答案拒答准确率 88%；Docker Compose 单机一键启动。
+
+
