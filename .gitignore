@@ -1,0 +1,27 @@
+docs/问题
+docs/计划
+
+# 操作系统生成的文件
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store
+
+# 编辑器 / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 临时文件与日志
+*.tmp
+*.temp
+*.bak
+*.log
+~$*
+
+# Office 打开时产生的临时文件
+~$*.docx
+~$*.xlsx
+~$*.pptx
